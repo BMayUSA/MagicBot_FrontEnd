@@ -4,6 +4,9 @@ var context;  // 2d context of the canvas
 var pixel;  // a single red pixel to draw a single lidar scan
 var transparency;  // a 50% opaque white image the size of the screen to fade old images
 
+var imgData;  // buffer canvas for drawing laser scan pixels
+var buffer;  // flag for whether to use buffer or fillRect method
+
 var lidar_listener;  // subscriber to /scan
 var currentScan;  // object to hold the most recent lidar scan
 var max_range;  // maximum range of the lidar scanner
@@ -29,6 +32,8 @@ function init() {
 
   currentOdom = new OdomData();   // allocate memory for odom structure
   currentScan = new LidarScan();  // allocate memory for lidar structure
+
+  buffer = false;
 
   max_range = 10;  //TODO: change this to be not a hard set value
   robotWidth = 20 * .0254;   // 20 inches wide * .0254 inches/meter
@@ -78,21 +83,29 @@ function subscribeToTopics() {
     ros : ros,
     name : '/scan',
     messageType : 'sensor_msgs/LaserScan',
-    throttle_rate : 10
+    throttle_rate : 10,  // messages throttled to a minimum of 10 millis between messages
+    queue_size : 1,
+    buff_size : 2**13  // buff_size is 2^13 bytes because my estimated size of a laser scan message is more than 2^12, but not yet 2^13
+                       // my estimate comes from http://docs.ros.org/api/sensor_msgs/html/msg/LaserScan.html note: consistently 1081 items in ranges
+                       // idea for setting buff_size comes from https://github.com/ros/ros_comm/issues/536
   });
   // the following function is called everytime a message is received from /scan
   lidar_listener.subscribe(function(message) {
     // sets the individual pieces of currentScan from the most recent message
-    currentScan.ranges = message.ranges;
+    for(i = 0; i < message.ranges.length; i++) {
+      currentScan.ranges[i] = message.ranges[i];
+    }
     currentScan.angle_min = message.angle_min;
     currentScan.angle_increment = message.angle_increment;
   });
-
   // Subscribe to /odom to receive odometry data
   odom_listener = new ROSLIB.Topic({
     ros : ros,
     name : '/odom',
     messageType : 'nav_msgs/Odometry',
+    queue_size : 1,
+    buff_size : 2**10  // buff_size is 2^10 bytes because my estimated size of an odometry message is more than 2^9, but less than 2^10
+                       // my estimate comes from http://docs.ros.org/api/nav_msgs/html/msg/Odometry.html
   });
   // the following function is called evertime a message is received from /odom
   odom_listener.subscribe(function(message) {
@@ -100,7 +113,7 @@ function subscribeToTopics() {
     currentOdom.x = message.pose.pose.position.x;
     currentOdom.y = message.pose.pose.position.y;
     var o = message.pose.pose.orientation;  // sets a temp variable for the messages quaternion representing the orientation
-    currentOdom.theta = getYaw(o.x, o.y, o.z, o.w);  // calculates the yaw of the robot
+    //currentOdom.theta = getYaw(o.x, o.y, o.z, o.w);  // calculates the yaw of the robot
   });
 }
 
@@ -112,23 +125,37 @@ function animate() {
 
 // called to draw the current state and observations of the robot
 function draw() {
-  context.putImageData(transparency, 0, 0);  // place the transparency image at (0, 0) to fade the previously drawn images
+  console.log("Draw Called");
+  //context.putImageData(transparency, 0, 0);  // place the transparency image at (0, 0) to fade the previously drawn images
 
-  // Draw the Lidar Data
-  var x;  // temporary variable for the x value of an individual lidar range
-  var y;  // temporary variable for the y value of an individual lidar range
-  var angle = currentScan.angle_min;  // temporary variable for the angle of the current individual lidar range, starts at the minimum angle
-  var imgData = context.createImageData(canvas.width, canvas.height);  // creates new canvas sized image data
-  for(var i = 0; i < currentScan.ranges.length; i++) {
-    x = (canvas.width / 2) + (scale * currentScan.ranges[i] * Math.cos(angle + currentOdom.theta));  // x coordinate of scan with transform
-    y = (canvas.height / 2) - (scale * currentScan.ranges[i] * Math.sin(angle + currentOdom.theta)); // y coordinate of scan with transform
-    //var index = 4 * Math.round(canvas.width * y + x);
-    var index = 4 * (canvas.width * Math.round(y) + Math.round(x));
-    imgData.data[index] = 255;  // sets index-th pixel's red (0) to 255
-    imgData.data[index+3] = 255;  // sets index-th pixels's alpha (3) to 255
-    angle += currentScan.angle_increment;  // increment the current angle by angle increment
+  if(buffer) {
+    // Draw the Lidar Data buffer method
+    var x;  // temporary variable for the x value of an individual lidar range
+    var y;  // temporary variable for the y value of an individual lidar range
+    var angle = currentScan.angle_min;  // temporary variable for the angle of the current individual lidar range, starts at the minimum angle
+    imgData = context.createImageData(canvas.width, canvas.height);  // creates new canvas sized image data
+    for(var i = 0; i < currentScan.ranges.length; i++) {
+      x = (canvas.width / 2) + (scale * currentScan.ranges[i] * Math.cos(angle + currentOdom.theta));  // x coordinate of scan with transform
+      y = (canvas.height / 2) - (scale * currentScan.ranges[i] * Math.sin(angle + currentOdom.theta)); // y coordinate of scan with transform
+      var index = 4 * (canvas.width * Math.round(y) + Math.round(x));
+      imgData.data[index] = 255;  // sets index-th pixel's red (0) to 255
+      imgData.data[index+3] = 255;  // sets index-th pixels's alpha (3) to 255
+      angle += currentScan.angle_increment;  // increment the current angle by angle increment
+    }
+    context.putImageData(imgData, 0, 0);  // places the imgData pixel buffer at the top left corner
+  } else {
+    var x;  // temporary variable for the x value of an individual lidar range
+    var y;  // temporary variable for the y value of an individual lidar range
+    var angle = currentScan.angle_min;  // temporary variable for the angle of the current individual lidar range, starts at the minimum angle
+    for(var i = 0; i < currentScan.ranges.length; i++) {
+      x = scale * currentScan.ranges[i] * Math.cos(angle + currentOdom.theta);
+      y = scale * currentScan.ranges[i] * Math.sin(angle + currentOdom.theta);
+
+      context.fillStyle = "#FF0000";
+      context.fillRect(x, y, 1, 1);
+      angle += currentScan.angle_increment;  // increment the current angle by angle increment
+    }
   }
-  context.putImageData(imgData, 0, 0);  // places the imgData pixel buffer at the top left corner
 
   // Draw the robot's previous path
   // TODO: store previous state's somehow so this can be done

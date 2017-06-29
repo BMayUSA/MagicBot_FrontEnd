@@ -1,11 +1,6 @@
 var ros;  // pointer to the ROSLIB.Ros object
 var canvas;  // html canvas
 var context;  // 2d context of the canvas
-var pixel;  // a single red pixel to draw a single lidar scan
-var transparency;  // a 50% opaque white image the size of the screen to fade old images
-
-var imgData;  // buffer canvas for drawing laser scan pixels
-var buffer;  // flag for whether to use buffer or fillRect method
 
 var lidar_listener;  // subscriber to /scan
 var currentScan;  // object to hold the most recent lidar scan
@@ -25,29 +20,16 @@ animate();
 function init() {
   canvas = document.getElementById('canvas');  // connect canvas with html canvas
   context = canvas.getContext('2d');  // get 2d context from canvas
-  pixel = context.createImageData(1, 1);  // create a 1x1 single pixel image for drawing individual scans
-  transparency = context.createImageData(canvas.width, canvas.height);  // create an image the size of the screen for use in fading old images
   context.transform(1, 0, 0, 1, canvas.width/2, canvas.height/2);  // Put (0, 0) in the center of the canvas
   context.transform(1, 0, 0, -1, 0, 0);  // flip so the y+ is up
 
   currentOdom = new OdomData();   // allocate memory for odom structure
   currentScan = new LidarScan();  // allocate memory for lidar structure
 
-  buffer = false;
-
   max_range = 10;  //TODO: change this to be not a hard set value
   robotWidth = 20 * .0254;   // 20 inches wide * .0254 inches/meter
   robotLength = 26 * .0254;  // 26 inches long * .0254 inches/meter
   scale = (canvas.height / 2) / max_range;  // scale for pixels per meter
-
-  // ImageData is [r, g, b, a]
-  pixel.data[0] = 255;  // set pixel to 100% red g and b default to 0
-  pixel.data[3] = 255;  // set pixel to 100% alpha (full opacity)
-  
-  transparency.data[0] = 255;  // set transparency to white #FFFFFF
-  transparency.data[1] = 255;
-  transparency.data[2] = 255;
-  transparency.data[3] = 128;  // set transparency to 50% alpha (half transparent)
 
   document.getElementById("start").addEventListener("click", connect);   // connect start button with html button, set click listener to connect
   document.getElementById("stop").addEventListener("click", terminate);  // connect stop button with html button, set click to terminate
@@ -125,36 +107,24 @@ function animate() {
 
 // called to draw the current state and observations of the robot
 function draw() {
-  console.log("Draw Called");
-  //context.putImageData(transparency, 0, 0);  // place the transparency image at (0, 0) to fade the previously drawn images
+  context.fillStyle = "rgba(255, 255, 255, 0.5)";  // set fill style to 50% transparent white for fade
+  context.fillRect(canvas.width / -2, canvas.height / -2, canvas.width, canvas.height);  //  fill the entire canvas with transparent white to fade old points
 
-  if(buffer) {
-    // Draw the Lidar Data buffer method
-    var x;  // temporary variable for the x value of an individual lidar range
-    var y;  // temporary variable for the y value of an individual lidar range
-    var angle = currentScan.angle_min;  // temporary variable for the angle of the current individual lidar range, starts at the minimum angle
-    imgData = context.createImageData(canvas.width, canvas.height);  // creates new canvas sized image data
-    for(var i = 0; i < currentScan.ranges.length; i++) {
-      x = (canvas.width / 2) + (scale * currentScan.ranges[i] * Math.cos(angle + currentOdom.theta));  // x coordinate of scan with transform
-      y = (canvas.height / 2) - (scale * currentScan.ranges[i] * Math.sin(angle + currentOdom.theta)); // y coordinate of scan with transform
-      var index = 4 * (canvas.width * Math.round(y) + Math.round(x));
-      imgData.data[index] = 255;  // sets index-th pixel's red (0) to 255
-      imgData.data[index+3] = 255;  // sets index-th pixels's alpha (3) to 255
-      angle += currentScan.angle_increment;  // increment the current angle by angle increment
-    }
-    context.putImageData(imgData, 0, 0);  // places the imgData pixel buffer at the top left corner
-  } else {
-    var x;  // temporary variable for the x value of an individual lidar range
-    var y;  // temporary variable for the y value of an individual lidar range
-    var angle = currentScan.angle_min;  // temporary variable for the angle of the current individual lidar range, starts at the minimum angle
-    for(var i = 0; i < currentScan.ranges.length; i++) {
-      x = scale * currentScan.ranges[i] * Math.cos(angle + currentOdom.theta);
-      y = scale * currentScan.ranges[i] * Math.sin(angle + currentOdom.theta);
+  var x;  // temporary variable for the x value of an individual lidar range
+  var y;  // temporary variable for the y value of an individual lidar range
+  var angle = currentScan.angle_min;  // temporary variable for the angle of the current individual lidar range, starts at the minimum angle
+  for(var i = 0; i < currentScan.ranges.length; i++) {
+    x = scale * currentScan.ranges[i] * Math.cos(angle + currentOdom.theta);  // find x from the current range and angle
+    y = scale * currentScan.ranges[i] * Math.sin(angle + currentOdom.theta);  // find y from the current range and angle
 
-      context.fillStyle = "#FF0000";
-      context.fillRect(x, y, 1, 1);
-      angle += currentScan.angle_increment;  // increment the current angle by angle increment
-    }
+    context.fillStyle = "#FF0000";  // set fill style to red
+    context.fillRect(x, y, 1, 1);  // draw a 1x1 pixel at (x, y)
+    context.strokeStyle = "#FF0000";  // set stroke style to red
+    //context.moveTo(x, y);  // other potential method of just drawing a one pixel line
+    //context.beginPath();
+    //context.lineTo(x+1, y);
+    //context.stroke();
+    angle += currentScan.angle_increment;  // increment the current angle by angle increment
   }
 
   // Draw the robot's previous path

@@ -78,7 +78,7 @@ function subscribeToTopics() {
     ros : ros,
     name : '/scan',
     messageType : 'sensor_msgs/LaserScan',
-    throttle_rate : 1000
+    throttle_rate : 10
   });
   // the following function is called everytime a message is received from /scan
   lidar_listener.subscribe(function(message) {
@@ -93,7 +93,6 @@ function subscribeToTopics() {
     ros : ros,
     name : '/odom',
     messageType : 'nav_msgs/Odometry',
-    throttle_rate : 1000
   });
   // the following function is called evertime a message is received from /odom
   odom_listener.subscribe(function(message) {
@@ -119,15 +118,20 @@ function draw() {
   var x;  // temporary variable for the x value of an individual lidar range
   var y;  // temporary variable for the y value of an individual lidar range
   var angle = currentScan.angle_min;  // temporary variable for the angle of the current individual lidar range, starts at the minimum angle
-  for(i = 0; i < currentScan.ranges.length; i++) {
+  var imgData = context.createImageData(canvas.width, canvas.height);  // creates new canvas sized image data
+  for(var i = 0; i < currentScan.ranges.length; i++) {
     x = (canvas.width / 2) + (scale * currentScan.ranges[i] * Math.cos(angle + currentOdom.theta));  // x coordinate of scan with transform
     y = (canvas.height / 2) - (scale * currentScan.ranges[i] * Math.sin(angle + currentOdom.theta)); // y coordinate of scan with transform
-    context.putImageData(pixel, x, y);  // place a single red pixel at (x, y)
+    //var index = 4 * Math.round(canvas.width * y + x);
+    var index = 4 * (canvas.width * Math.round(y) + Math.round(x));
+    imgData.data[index] = 255;  // sets index-th pixel's red (0) to 255
+    imgData.data[index+3] = 255;  // sets index-th pixels's alpha (3) to 255
     angle += currentScan.angle_increment;  // increment the current angle by angle increment
   }
+  context.putImageData(imgData, 0, 0);  // places the imgData pixel buffer at the top left corner
 
   // Draw the robot's previous path
-  // TODO: store previous state's somehow so ^ can be done
+  // TODO: store previous state's somehow so this can be done
 
   // Draw the robot which is represented as a circle with a radius oriented at the current angle to show direction
   var radius = scale * robotLength / 2;  // radius set to half the robot's length (bigger side to give buffer) divided by two times the scale

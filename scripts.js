@@ -78,12 +78,11 @@ function subscribeToTopics() {
     ros : ros,
     name : '/scan',
     messageType : 'sensor_msgs/LaserScan',
-    throttle_rate : 1000
+    throttle_rate : 10
   });
   // the following function is called everytime a message is received from /scan
   lidar_listener.subscribe(function(message) {
     // sets the individual pieces of currentScan from the most recent message
-    console.log("Incoming Lidar");
     currentScan.ranges = message.ranges;
     currentScan.angle_min = message.angle_min;
     currentScan.angle_increment = message.angle_increment;
@@ -107,37 +106,32 @@ function subscribeToTopics() {
 
 // called to animate the scene
 function animate() {
-  setTimeout(function() {  // set timeout to avoid calling draw 500 times between each incoming message
-    requestAnimationFrame(animate);  // request that animate be called before the next repaint
-    draw();  // draw the current state and observations of the robot
-  }, 500);  // 500 millis timeout  TODO: Set this value once message throttles are determined
+  requestAnimationFrame(animate);  // request that animate be called before the next repaint
+  draw();  // draw the current state and observations of the robot
 }
 
 // called to draw the current state and observations of the robot
 function draw() {
-  console.log("Draw Called");
   context.putImageData(transparency, 0, 0);  // place the transparency image at (0, 0) to fade the previously drawn images
 
   // Draw the Lidar Data
   var x;  // temporary variable for the x value of an individual lidar range
   var y;  // temporary variable for the y value of an individual lidar range
   var angle = currentScan.angle_min;  // temporary variable for the angle of the current individual lidar range, starts at the minimum angle
-  var canvasData = context.getImageData(0, 0, canvas.width, canvas.height);
-  for(i = 0; i < currentScan.ranges.length; i++) {
+  var imgData = context.createImageData(canvas.width, canvas.height);  // creates new canvas sized image data
+  for(var i = 0; i < currentScan.ranges.length; i++) {
     x = (canvas.width / 2) + (scale * currentScan.ranges[i] * Math.cos(angle + currentOdom.theta));  // x coordinate of scan with transform
     y = (canvas.height / 2) - (scale * currentScan.ranges[i] * Math.sin(angle + currentOdom.theta)); // y coordinate of scan with transform
-    //context.putImageData(pixel, x, y);  // place a single red pixel at (x, y)
-    var index = (x + y * canvas.width) * 4;
-    canvasData.data[index] = 255;
-    canvasData.data[index+1] = 0;
-    canvasData.data[index+2] = 0;
-    canvasData.data[index+3] = 128;
+    //var index = 4 * Math.round(canvas.width * y + x);
+    var index = 4 * (canvas.width * Math.round(y) + Math.round(x));
+    imgData.data[index] = 255;  // sets index-th pixel's red (0) to 255
+    imgData.data[index+3] = 255;  // sets index-th pixels's alpha (3) to 255
     angle += currentScan.angle_increment;  // increment the current angle by angle increment
   }
-  context.putImageData(canvasData, 0, 0);
+  context.putImageData(imgData, 0, 0);  // places the imgData pixel buffer at the top left corner
 
   // Draw the robot's previous path
-  // TODO: store previous state's somehow so ^ can be done
+  // TODO: store previous state's somehow so this can be done
 
   // Draw the robot which is represented as a circle with a radius oriented at the current angle to show direction
   var radius = scale * robotLength / 2;  // radius set to half the robot's length (bigger side to give buffer) divided by two times the scale

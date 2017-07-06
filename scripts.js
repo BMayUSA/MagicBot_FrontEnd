@@ -10,7 +10,7 @@ var odom_listener;  // subscriber to /odom
 var currentOdom;  // object to hold the most recent odometry data
 
 var robotWidth;  // physical width of the robot
-var robotLength;  // physical length of the robot
+var robotLength;  // physical length of the robot 
 var scale;  // canvas scale from meters to pixels
 
 init();
@@ -54,6 +54,8 @@ function connect() {
 
   // on close of the websocket connection
   ros.on('close', function() {
+    lidar_listener.unsubscribe();
+    odom_listener.unsubscribe();
     console.log('Connection to websocket server closed.');
   });
 }
@@ -65,7 +67,8 @@ function subscribeToTopics() {
     ros : ros,
     name : '/scan',
     messageType : 'sensor_msgs/LaserScan',
-    throttle_rate : 10,  // messages throttled to a minimum of 10 millis between messages
+    throttle_rate : 100,  // messages throttled to a minimum of 100 millis between messages
+    queue_length : 0,
     queue_size : 1,
     buff_size : 2**13  // buff_size is 2^13 bytes because my estimated size of a laser scan message is more than 2^12, but not yet 2^13
                        // my estimate comes from http://docs.ros.org/api/sensor_msgs/html/msg/LaserScan.html note: consistently 1081 items in ranges
@@ -85,6 +88,7 @@ function subscribeToTopics() {
     ros : ros,
     name : '/odom',
     messageType : 'nav_msgs/Odometry',
+    queue_length : 0,
     queue_size : 1,
     buff_size : 2**10  // buff_size is 2^10 bytes because my estimated size of an odometry message is more than 2^9, but less than 2^10
                        // my estimate comes from http://docs.ros.org/api/nav_msgs/html/msg/Odometry.html
@@ -95,7 +99,7 @@ function subscribeToTopics() {
     currentOdom.x = message.pose.pose.position.x;
     currentOdom.y = message.pose.pose.position.y;
     var o = message.pose.pose.orientation;  // sets a temp variable for the messages quaternion representing the orientation
-    //currentOdom.theta = getYaw(o.x, o.y, o.z, o.w);  // calculates the yaw of the robot
+    currentOdom.theta = getYaw(o.x, o.y, o.z, o.w);  // calculates the yaw of the robot
   });
 }
 
@@ -107,7 +111,7 @@ function animate() {
 
 // called to draw the current state and observations of the robot
 function draw() {
-  context.fillStyle = "rgba(255, 255, 255, 0.5)";  // set fill style to 50% transparent white for fade
+  context.fillStyle = "rgba(255, 255, 255, 0.3)";  // set fill style to 30% transparent white for fade
   context.fillRect(canvas.width / -2, canvas.height / -2, canvas.width, canvas.height);  //  fill the entire canvas with transparent white to fade old points
 
   var x;  // temporary variable for the x value of an individual lidar range
@@ -119,11 +123,7 @@ function draw() {
 
     context.fillStyle = "#FF0000";  // set fill style to red
     context.fillRect(x, y, 1, 1);  // draw a 1x1 pixel at (x, y)
-    context.strokeStyle = "#FF0000";  // set stroke style to red
-    //context.moveTo(x, y);  // other potential method of just drawing a one pixel line
-    //context.beginPath();
-    //context.lineTo(x+1, y);
-    //context.stroke();
+
     angle += currentScan.angle_increment;  // increment the current angle by angle increment
   }
 
@@ -167,6 +167,7 @@ function LidarScan() {
 // Helper Functions
 // ----------------
 
+// caluclates the square of the distance between 2 points
 function distanceSquared(p1, p2) {
   var sum = 0;
   sum += Math.pow(p2[0] - p1[0], 2);
@@ -174,6 +175,7 @@ function distanceSquared(p1, p2) {
   return sum;
 }
 
+/*  Roll and Pitch are unused so I extracted the yaw portion as a seperate method
 // Obtained pseudo-code from:
 // https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Euler_Angles_from_Quaternion
 function quaternionToEuler(x, y, z, w) {
@@ -192,7 +194,9 @@ function quaternionToEuler(x, y, z, w) {
 
   return [roll, pitch, yaw];
 }
+*/
 
+// retrieves the euler yaw from the quaternion's x, y, z, w
 function getYaw(x, y, z, w) {
   var t3 = 2 * (w*z + x*y);
   var t4 = 1 - 2 * (y*y + z*z);

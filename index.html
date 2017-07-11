@@ -10,18 +10,15 @@
 </head>
 
 <body>
-  <div style="width:1500px height=600px">
-	  <div style="float:left width:600px">
-	    <h1>Lidar Visualizer with Odometry</h1>
-	    <canvas id="canvas" width="600" height="600" style="border:1px solid #000000;"></canvas>
-	    <button type="button" id="start">Connect</button>
-	    <button type="button" id="stop">Disconnect</button>
-	  </div>
-	  <div style="float:right width:600px">
-	    <h1>Controls</h1>
-	    <canvas id="controls" width="600" height="600" style="border:1px solid #000000;"></canvas>
-	  </div>
+  <h1>ZombieBot</h1>
+  <div style="position: relative;">
+    <canvas id="canvas" width="600" height="600" 
+    style="position: absolute; left: 0; top: 0; z-index: 0;"></canvas>
+    <canvas id="controls" width="600" height="600" 
+    style="position: absolute; left: 0; top: 0; z-index: 1; border: 1px solid #000000;"></canvas>
   </div>
+  <button type="button" id="start">Connect</button>
+  <button type="button" id="stop">Disconnect</button>
 
   <script src="scripts.js"></script>
 </body>

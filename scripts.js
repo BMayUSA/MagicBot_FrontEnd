@@ -1,6 +1,22 @@
+/*
+ * Odom_Viz3.2 | ZombieBot Controller and Visualizer
+ * Lidar scans and odometry data is visualized
+ * Simultaenously a virtual joystick controls the motors
+ * Communication handled through javascript RosBridge
+ *
+ * Brian May | Summer 2017 Internship
+ * Laboratory4Progress
+ */
+
 var ros;  // pointer to the ROSLIB.Ros object
 var canvas;  // html canvas
 var context;  // 2d context of the canvas
+var connectivity;  // html text displaying connectivity status
+
+var controls;  // html canvas for the virtual joystick
+var rect;  // the rect defining the controls canvas
+var conCtx;  // the 2d context of the controls canvas
+var mouseDown;  // a variable for tracking when the mouse button is down
 
 var lidar_listener;  // subscriber to /scan
 var currentScan;  // object to hold the most recent lidar scan
@@ -9,8 +25,15 @@ var max_range;  // maximum range of the lidar scanner
 var odom_listener;  // subscriber to /odom
 var currentOdom;  // object to hold the most recent odometry data
 
+var velocity_publisher;  // publisher to /cmd_vel
+var publish_counter;  // counter for when velocities should be published to /cmd_vel
+var publish_freq;  // how many animation loops should pass before another velocity message is published
+var publish_ready;
+var twist;  // twist message for publishing current velocity
+
 var robotWidth;  // physical width of the robot
 var robotLength;  // physical length of the robot 
+var radius;  // the radius of the circle to draw that depicts the robot
 var scale;  // canvas scale from meters to pixels
 var states;  // linked list for storing up to 10 previous states of the robot
 
@@ -21,13 +44,48 @@ animate();
 function init() {
   canvas = document.getElementById('canvas');  // connect canvas with html canvas
   context = canvas.getContext('2d');  // get 2d context from canvas
+  canvas.width = window.innerWidth;  // set the canvas to the width of the window (full page)
+  canvas.height = window.innerHeight;  // set the canvas to the height of the window (full page)
   context.transform(1, 0, 0, 1, canvas.width/2, canvas.height/2);  // Put (0, 0) in the center of the canvas
   context.transform(1, 0, 0, -1, 0, 0);  // flip so the y+ is up
+
+  connectivity = document.getElementById("connectivity");
+
+  controls = document.getElementById('controls');  // connect controls canvas with html
+  conCtx = controls.getContext('2d');  // get 2d context from controls
+  controls.width = window.innerWidth;  // set the controls canvas to the width of the window (full page)
+  controls.height = window.innerHeight;  // set the controls canvas to the height of the window (full page)
+  conCtx.strokeStyle = "#0000FF";  // set controls stroke style to this color
+
+  controls.addEventListener("mousedown", stickDown);  // add a listener to the controls canvas for mousedown events
+  controls.addEventListener("mouseup", stickUp);  // add a listener to the controls canvas for mouseup events
+  controls.addEventListener("mousemove", movement);  // add a listener to the controls canvas for mousemove events
+  controls.addEventListener("touchstart", stickDownT);  // handles touch events on the controls canvas
+  controls.addEventListener("touchend", stickUp);  // adds a listener for when touches are removed
+  controls.addEventListener("touchmove", movementT);  // adds a listener for when touches move
+  mouseDown = null;
+
+  publish_ready = false;
+  publish_counter = 0;
+  publish_freq = 10;  // every 10 draw frames, a new velocity message is published
+  twist = new ROSLIB.Message({  // creates a new twist message for publishing current velocity
+    linear : {
+      x : 0,  // all values 0 so that the bot doesn't take off on startup
+      y : 0,
+      z : 0
+    },
+    angular : {
+      x : 0,  // all values 0 so that the bot doesn't spin on startup
+      y : 0,
+      z : 0
+    }
+  });
 
   currentOdom = new OdomData();   // allocate memory for odom structure
   currentScan = new LidarScan();  // allocate memory for lidar structure
   states = new World();  // allocate memory for the world structure
-  states.append(new State(currentScan, currentOdom));  // append the default odom and lidar data to avoid null errors
+  states.append(currentScan, currentOdom);  // append the default odom and lidar data to avoid null errors
+
 
   max_range = 10;  //TODO: change this to be not a hard set value
   robotWidth = 20 * .0254;   // 20 inches wide * .0254 inches/meter
@@ -36,30 +94,33 @@ function init() {
 
   document.getElementById("start").addEventListener("click", connect);   // connect start button with html button, set click listener to connect
   document.getElementById("stop").addEventListener("click", terminate);  // connect stop button with html button, set click to terminate
+  //document.getElementById("start").addEventListener("touch", connect);
+  //document.getElementById("stop").addEventListener("touch", terminate);
 }
 
 // connect is called to start the rosbridge connection between the js and ROS
 function connect() {
   ros = new ROSLIB.Ros({
-    url : 'ws://35.2.220.201:9092'  // ip address of the raspberry pi on the magicbot which runs on port 9092
+    url : 'ws://zombie.local:9092'  // ip address of the raspberry pi on the magicbot which runs on port 9092
   });
 
   // on successful connection to the websocket
   ros.on('connection', function() {
     console.log('Connected to websocket server.');
+    connectivity.innerHTML = "Connected";
+    connectivity.style.color = "#00FF00";
     subscribeToTopics();  // subscribes the rosbridge to /scan and /odom
   });
 
   // on error connecting to the websocket (i.e. if a roscore is not running)
   ros.on('error', function(error) {
     console.log('Error connecting to websocket server: ', error);
+    connectivity.innerHTML = "Error Connecting";
+    connectivity.style.color = "#FF0000"
   });
 
   // on close of the websocket connection
   ros.on('close', function() {
-    // Note: unsubscribe here instead of in terminate() so that in case of error termination subscribers are still unsubscribed
-    lidar_listener.unsubscribe();  // unsubscribe from lidar subscriber
-    odom_listener.unsubscribe();  // unsubscribe from odom subscriber
     console.log('Connection to websocket server closed.');
   });
 }
@@ -71,46 +132,58 @@ function subscribeToTopics() {
     ros : ros,
     name : '/scan',
     messageType : 'sensor_msgs/LaserScan',
-    throttle_rate : 100,  // messages throttled to a minimum of 100 millis between messages
-    queue_length : 0,
-    queue_size : 1,
-    buff_size : 2**13  // buff_size is 2^13 bytes because my estimated size of a laser scan message is more than 2^12, but not yet 2^13
-                       // my estimate comes from http://docs.ros.org/api/sensor_msgs/html/msg/LaserScan.html note: consistently 1081 items in ranges
-                       // idea for setting buff_size comes from https://github.com/ros/ros_comm/issues/536
+    throttle_rate : 500,  // messages throttled to a minimum of 500 millis between messages
+    queue_size : 1
   });
+
   // the following function is called everytime a message is received from /scan
   lidar_listener.subscribe(function(message) {
-    // sets the individual pieces of currentScan from the most recent message
-    for(i = 0; i < message.ranges.length; i++) {  // deep copy of ranges so that message can be garbage collected
-      currentScan.ranges[i] = message.ranges[i];
-    }
-    currentScan.angle_min = message.angle_min;
-    currentScan.angle_increment = message.angle_increment;
+    currentScan = JSON.parse(JSON.stringify(message));  // deep copy's message into currentScan (stupid way of deep copying but it is the best js offers)
+    currentScan.angle_max = null;  // set unnecessary properties to null to conserve memory
+    currentScan.time_increment = null;
+    currentScan.scan_time = null;
+    currentScan.range_min = null;
+    currentScan.range_max = null;
+    currentScan.intensities = null;
+    message = null;  // set message to null so that it can be garbage collected
   });
+
   // Subscribe to /odom to receive odometry data
   odom_listener = new ROSLIB.Topic({
     ros : ros,
     name : '/odom',
     messageType : 'nav_msgs/Odometry',
-    queue_length : 0,
-    queue_size : 1,
-    buff_size : 2**10  // buff_size is 2^10 bytes because my estimated size of an odometry message is more than 2^9, but less than 2^10
-                       // my estimate comes from http://docs.ros.org/api/nav_msgs/html/msg/Odometry.html
+    queue_size : 1
   });
+
   // the following function is called evertime a message is received from /odom
   odom_listener.subscribe(function(message) {
     // set the individual pieces of currentOdom from the most recent message
-    currentOdom.x = message.pose.pose.position.x;
-    currentOdom.y = message.pose.pose.position.y;
-    var o = message.pose.pose.orientation;  // sets a temp variable for the messages quaternion representing the orientation
+    currentOdom = JSON.parse(JSON.stringify(message));  // deep copies the incoming message
+    currentOdom.x = currentOdom.pose.pose.position.x;  // sets the x position to an easier to access variable
+    currentOdom.y = currentOdom.pose.pose.position.y;  // sets the y position to an easier to access variable
+    var o = currentOdom.pose.pose.orientation;  // sets a temp variable for the messages quaternion representing the orientation
     currentOdom.theta = getYaw(o.x, o.y, o.z, o.w);  // calculates the yaw of the robot
+    message = null;  // set message to null so that it can be garbage collected
 
     // append the current state to the states variable if it has moved or turned more than a set threshold
-    if(distanceSquared([states.head.odom.x, states.head.odom.y], [currentOdom.x, currentOdom.y]) > 2 ||
-       Math.abs(states.head.odom.theta - currentOdom.theta) > 0.03) {  // TODO: find ideal values for thresholds
-      states.append(new State(currentScan, currentOdom));  // add current scan and odom to the world linked list in the form of a State
+    if(distanceSquared([states.tail.odom.x, states.tail.odom.y], [currentOdom.x, currentOdom.y]) > .04 || 
+    (Math.abs(states.tail.odom.theta - currentOdom.theta) > 0.03)) {  // run if bot has moved a specified distance or turned TODO: find ideal values for thresholds
+      var tempLidar = JSON.parse(JSON.stringify(currentScan));  // deep copy currentScan (not a pretty way to deep copy, but js offers nothing better)
+      var tempOdom = JSON.parse(JSON.stringify(currentOdom));  // deep copy currentOdom
+      states.append(tempLidar, tempOdom);  // add current scan and odom to the world linked list
     }
   });
+
+  // Publisher Initialization
+  // ------------------------
+  velocity_publisher = new ROSLIB.Topic({
+    ros : ros,
+    name : 'cmd_vel',
+    messageType : 'geometry_msgs/Twist',
+    queue_size : 1  // set queue_size to 1 so that the topic does not accumulate old messages
+  });
+  publish_ready = true;
 }
 
 // called to animate the scene
@@ -125,7 +198,8 @@ function draw() {
   context.fillStyle = "#FFFFFF";  // set fill style to opaque white for clear
   //context.fillStyle = "rgba(255, 255, 255, .3)";  // set fill style to 30% transparent white for fade
   context.fillRect(canvas.width / -2, canvas.height / -2, canvas.width, canvas.height);  //  fill the entire canvas with transparent white to fade old points
-
+  
+  /*
   // Draw the past lidar scans
   context.fillStyle = "#00FFF0";  // set fill style to this color
   var pointer = states.head;  // variable pointing at the current location in the states linked list
@@ -134,6 +208,7 @@ function draw() {
     drawLidar(pointer.lidar.ranges, pointer.lidar.angle_min, pointer.lidar.angle_increment, pointer.odom.theta);
     pointer = pointer.next;  // advance the pointer along the linked list
   }
+  */
 
   // Draw the current lidar scan
   context.fillStyle = "#FF0000";  // set fill style to red
@@ -142,16 +217,17 @@ function draw() {
   // Draw the robot's previous path
   context.strokeStyle = "#00FF00";  // set stroke style to this color
   context.beginPath();
-  context.moveTo(0, 0);  // move context cursor to (0, 0), the position that the robot will be drawn at
   pointer = states.head;  // point at states head
+  context.moveTo(scale*(pointer.odom.x - currentOdom.x), scale*(pointer.odom.y - currentOdom.y));  // move to the oldest position relative to the robot
+  if(pointer != null) pointer = pointer.next;  // advance the pointer if appropriate
   while(pointer != null) {  // loop through entire linked list
-    context.lineTo(pointer.odom.x, pointer.odom.y);  // draw a line to the next (x, y) position
+    context.lineTo(scale*(pointer.odom.x - currentOdom.x), scale*(pointer.odom.y - currentOdom.y));  // draw a line to the next (x, y) position relative to robot
     pointer = pointer.next;  // advance the pointer
   }
   context.stroke();  // stroke to draw the line
-
+  
   // Draw the robot which is represented as a circle with a radius oriented at the current angle to show direction
-  var radius = scale * robotLength / 2;  // radius set to half the robot's length (bigger side to give buffer) divided by two times the scale
+  radius = scale * robotLength / 2;  // radius set to half the robot's length (bigger side to give buffer) divided by two times the scale
   context.strokeStyle = "#000000";  // set stroke to black
   context.fillStyle = "#FFFFFF";  // set fill to white
   context.beginPath();
@@ -161,6 +237,13 @@ function draw() {
   context.moveTo(0, 0);  // set cursor at (0, 0)
   context.lineTo(radius*Math.cos(currentOdom.theta), radius*Math.sin(currentOdom.theta));  // create line from cursor position to outer edge of circle
   context.stroke();  // stroke to draw line in black
+
+  publish_counter++;  // increment publish counter
+  if(publish_ready && publish_counter >= publish_freq) {  // if the publish frequency has been met and the previous publish has been completed
+    //console.log("Publishing x velocity: " + twist.linear.x);
+    velocity_publisher.publish(twist);  // publish the current twist message to /cmd_vel
+    publish_counter = 0;  // reset publish counter
+  }
 }
 
 // used to draw the ranges of a lidar scan, method extracted to avoid near duplicate code
@@ -179,7 +262,98 @@ function drawLidar(ranges, angle, increment, robot_angle) {
 
 // called on stop button clicked, closes rosbridge connection
 function terminate() {
+  //lidar_listener.unsubscribe();  // unsubscribe from lidar subscriber
+  //odom_listener.unsubscribe();  // unsubscribe from odom subscriber
+  //velocity_publisher.unsubscribe();  // unsubscribe from publishing velocities
   ros.close();  // closes rosbridge websocket connection
+  connectivity.innerHTML = "Not Connected";
+  connectivity.style.color = "#000000";
+}
+
+// Controller Methods
+// ------------------
+// called when the mouse button is pressed
+function stickDown(event) {
+  event.preventDefault();
+  rect = controls.getBoundingClientRect();  // retrieves the current rect defining the controls canvas
+  mouseDown = [event.clientX - rect.left, event.clientY - rect.top];  // sets mouseDown to [x, y] of the click relative to top left of controls canvas
+  drawStick([]);  // draws the bounding circle without a joystick circle
+}
+
+// called when the mouse button is released
+function stickUp() {
+  mouseDown = null;  // resets the mouseDown variable to nulll
+  conCtx.clearRect(0, 0, controls.width, controls.height);  // clears all current drawings on the controls canvas
+  publishVelocity(0, 0);  // publishes 0 linear and 0 angular velocities to stop the robot
+}
+
+// called when the mouse button is moved within the controls canvas
+function movement(event) {
+  event.preventDefault();
+  if(mouseDown != null) {  // only if the mouse button is currently pressed
+    var relX = event.clientX - rect.left - mouseDown[0];  // the x location relative to where the button was originally clicked (max 100)
+    var relY = mouseDown[1] - (event.clientY - rect.top);  // the y location relative to where the button was originally clicked (max 100)
+    if(distanceSquared([0, 0], [relX, relY]) > 10000) {  // if the distance from the mouse position to the original click location is greater than 100:
+      var arctan = Math.atan2(relY, relX);  // finds the angle that the mouse is at
+      relX = 100 * Math.cos(arctan);  // sets the x to the maximum radius at the correct angle
+      relY = 100 * Math.sin(arctan);  // sets the y to the maximum radius at the correct angle
+    }
+    drawStick([relX, relY]);  // draws the bounding circle with a joystick circle at the current mouse location
+    publishVelocity(relY/100, relX/100);  // publishes a linear velocity correlated with the y position of the joystick and angular correlated with x
+  }
+}
+
+// same method as stickDown() but handles touch events
+function stickDownT(event) {
+  event.preventDefault();
+  rect = controls.getBoundingClientRect();  // retrieves the current rect defining the controls canvas
+  mouseDown = [event.touches[0].clientX - rect.left, event.touches[0].clientY - rect.top];  // sets mouseDown to [x, y] of the click relative to top left of controls canvas
+  drawStick([]);  // draws the bounding circle without a joystick circle
+}
+
+// same method as movement() but handles touch events
+function movementT(event) {
+  event.preventDefault();
+  if(mouseDown != null) {  // only if the mouse button is currently pressed
+    var relX = event.touches[0].clientX - rect.left - mouseDown[0];  // the x location relative to where the button was originally clicked (max 100)
+    var relY = mouseDown[1] - (event.touches[0].clientY - rect.top);  // the y location relative to where the button was originally clicked (max 100)
+    if(distanceSquared([0, 0], [relX, relY]) > 10000) {  // if the distance from the mouse position to the original click location is greater than 100:
+      var arctan = Math.atan2(relY, relX);  // finds the angle that the mouse is at
+      relX = 100 * Math.cos(arctan);  // sets the x to the maximum radius at the correct angle
+      relY = 100 * Math.sin(arctan);  // sets the y to the maximum radius at the correct angle
+    }
+    drawStick([relX, relY]);  // draws the bounding circle with a joystick circle at the current mouse location
+    publishVelocity(relY/100, relX/100);  // publishes a linear velocity correlated with the y position of the joystick and angular correlated with x
+  }
+}
+
+// draws the virtual joystick, parameter mousePos is an array either empty to not draw joystick or [x, y] to draw joystick
+function drawStick(mousePos) {
+  conCtx.clearRect(0, 0, controls.width, controls.height);  // clears old drawings
+  conCtx.beginPath();
+  conCtx.arc(mouseDown[0], mouseDown[1], 100, 0, 2 * Math.PI);  // draws a bounding circle where the button was originally pressed with radius 100
+  conCtx.stroke();
+  if(mousePos.length == 2) {  // if the mouse has been moved from the original location
+    conCtx.beginPath();
+    conCtx.arc(mousePos[0] + mouseDown[0], mouseDown[1] - mousePos[1], 10, 0, 2 * Math.PI);  // draws the joystick, a circle of radius 10, at the current mouse location
+    conCtx.stroke();
+  }
+}
+
+// sets the twist object to the current velocities to be published periodically
+function publishVelocity(forward, turn) {
+  twist = {  // sets values of the twist message
+    linear : {
+      x : forward,  // sets linear x velocity to the forward parameter
+      y : 0,  // never linear y velocity because the robot cannot strafe sideways
+      z : 0  // never linear z velocity because the robot cannot jump or fly
+    },
+    angular : {
+      x : 0,  // never angular x velocity because the robot has no roll
+      y : 0,  // never angular y velocity because the robot has no pitch
+      z : turn  // sets linear z, the yaw, to the turn parameter
+    }
+  };
 }
 
 // Define OdomData Structure
@@ -198,36 +372,28 @@ function LidarScan() {
   this.angle_increment = 0;
 }
 
-// Define State Structure
-// ----------------------
-
-function State(lidar, odom) {
-  this.lidar = lidar;
-  this.odom = odom;
-}
-
 // Define World Class
 // ------------------
-
 function World() {
-  this.max_length = 10;
-  this.length = 0;
-  this.head = null;
-  this.tail = null;
+  this.head = null;  // oldest element
+  this.tail = null;  // most recent element
+  this.length = 0;  // current length of the linked list
+  this.max_length = 20;  // maximum length of the linked list
 
-  this.append = function(state) {
-    // if the list is empty both head and tail point to the state being added
-    if(this.head == null && this.tail == null) {
-      this.head = state;
-      this.tail = state;
-    } else {  // if the list is not empty the old tail now points to the state being added
-      this.tail.next = state;
-      this.tail = state;
-    }
-    this.length++;
-    // if the length has exceeded max_length advance the head pointer to remove the head
-    if(this.length > this.max_length) {
-      this.head = this.head.next;
+  this.append = function(l, o) {  // used to append new elements to the linked list
+    const node = {lidar : l, odom : o};  // create a new node with the given attributes
+    node.next = null;  // this is going on the end of the list so it has a null next attribute
+    if(this.head == null && this.tail == null) {  // if the list is empty
+      this.head = node;  // set head and tail to this element
+      this.tail = node;
+    } else {  // if the linked list has at least one element (is not empty)
+      this.tail.next = node;  // link this node to the current tail
+      this.tail = node;  // set the tail to point at this node
+      this.length++;  // increment length
+      if(this.length >= this.max_length) {  // if the append makes the length exceed the maximumum length
+        this.head = this.head.next;  // advance the head pointer to chop off the oldest element (nothing points to it anymore)
+        this.length--;  // decrement the length to account for the lost node
+      }
     }
   }
 }

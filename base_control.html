@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+
+<script type="text/javascript" src="libs/eventemitter2.js"></script>
+<script type="text/javascript" src="libs/roslib.js"></script>
+
+<style>
+  * { margin:0; padding:0; } /* to remove the top and left whitespace */
+  html, body { width:100%; height:100%; } /* just to be sure these are full screen*/
+  canvas {display: block;} /* To remove the scrollbars */
+</style>
+  
+</head>
+
+<body>
+  <div style="position: absolute; left: 0; top: 0;">
+    <canvas id="canvas"
+    style="position: absolute; left: 0; top: 0; z-index: 0;"></canvas>
+    <canvas id="controls"
+    style="position: absolute; left: 0; top: 0; z-index: 1;"></canvas>
+  </div>
+  <div style="position: relative">
+    <h1 id="title">ZombieBot</h1>
+  </div>
+  <div style="position: relative; z-index: 2">
+    <button type="button" id="start">Connect</button>
+    <button type="button" id="stop">Disconnect</button>
+  </div>
+  <div style="position: relative; z-index: 2">
+    <h5 id="connectivity">Not Connected</h5>
+  </div>
+
+  <script src="base_scripts.js"></script>
+</body>
+</html>

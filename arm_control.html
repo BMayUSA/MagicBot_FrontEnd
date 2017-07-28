@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+
+<script type="text/javascript" src="libs/eventemitter2.js"></script>
+<script type="text/javascript" src="libs/roslib.js"></script>
+  
+</head>
+
+<body>
+  <h1 style="margin-bottom: 0px">Arm Control</h1>
+  <h5 id="connectivity" style="margin: 0px">Not Connected</h5>
+  <button type="button" id="start">Connect</button>
+  <button type="button" id="stop">Disconnect</button>
+  <div><br></div>
+  <div>
+    <h4 style="display: inline">Shoulder:</h4>
+    <h4 id="shoulder_val" style="display: inline">90</h4><br>
+    <input type="range" id="shoulder" min="0" max="180" defaultValue="90"
+    oninput="document.getElementById('shoulder_val').innerHTML = this.value;">
+  </div>
+  <br>
+  <div>
+    <h4 style="display: inline">Elbow Pitch:</h4>
+    <h4 id="elbow_pitch_val" style="display: inline">90</h4><br>
+    <input type="range" id="elbow_pitch" min="0" max="180" defaultValue="90"
+    oninput="document.getElementById('elbow_pitch_val').innerHTML = this.value;">
+  </div>
+  <br>
+  <div>
+    <h4 style="display: inline">Elbow Roll:</h4>
+    <h4 id="elbow_roll_val" style="display: inline">90</h4><br>
+    <input type="range" id="elbow_roll" min="0" max="180" defaultValue="90"
+    oninput="document.getElementById('elbow_roll_val').innerHTML = this.value;">
+  </div>
+  <br>
+  <div>
+    <h4 style="display: inline">Wrist Pitch:</h4>
+    <h4 id="wrist_pitch_val" style="display: inline">90</h4><br>
+    <input type="range" id="wrist_pitch" min="0" max="180" defaultValue="90"
+    oninput="document.getElementById('wrist_pitch_val').innerHTML = this.value;">
+  </div>
+  <br>
+  <div>
+    <h4 style="display: inline">Wrist Roll:</h4>
+    <h4 id="wrist_roll_val" style="display: inline">90</h4><br>
+    <input type="range" id="wrist_roll" min="0" max="180" defaultValue="90"
+    oninput="document.getElementById('wrist_roll_val').innerHTML = this.value;">
+  </div>
+  <br>
+  <div>
+    <h4 style="display: inline">Gripper Roll:</h4>
+    <h4 id="gripper_roll_val" style="display: inline">90</h4><br>
+    <input type="range" id="gripper_roll" min="0" max="180" defaultValue="90"
+    oninput="document.getElementById('gripper_roll_val').innerHTML = this.value;">
+  </div>
+  <br>
+  <div>
+    <h4 style="display: inline">Gripper:</h4>
+    <h4 id="gripper_val" style="display: inline">90</h4><br>
+    <input type="range" id="gripper" min="0" max="180" defaultValue="90"
+    oninput="document.getElementById('gripper_val').innerHTML = this.value;">
+  </div>
+  <br>
+  <div>
+    <input id="full" type="checkbox" style="display: inline" onchange="document.getElementById('send').disabled = !this.checked">
+    <p style="display: inline">Send full configuration</p>
+    <button id="send" disabled>Send</button>
+  </div>
+
+  <script src="arm_scripts.js"></script>
+</body>
+</html>

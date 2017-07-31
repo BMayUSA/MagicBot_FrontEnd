@@ -43,8 +43,8 @@ function init() {
     points : pts
   });
 
-  for(key in joints.joints) {
-    joints.joints[key].addEventListener("change", sendJoint);  // add event listeners to each slider
+  for(key in joints) {
+    joints[key].addEventListener("change", sendJoint);  // add event listeners to each slider
   }
 
   full = false;
@@ -111,11 +111,12 @@ function sendJoint() {
 // called when the send button is clicked
 function sendConfig() {
   var i = 0;
-  for(key in joints.joints) {
-    pts[0].positions[i] = joints.joints[key].value * Math.PI/180;  // get values from all sliders and convert to radians
+  for(key in joints) {
+    pts[0].positions[i] = joints[key].value * Math.PI/180;  // get values from all sliders and convert to radians
     msg.joint_names[i] = key;
     i++;
   }
+  pts[0].positions[joints.length-1] = gripper_open ? Math.PI : 0;
   msg.points = pts;
 
   joint_publisher.publish(msg);
@@ -124,7 +125,7 @@ function sendConfig() {
 // called to open or close the gripper
 function gripper_change() {
   msg.joint_names = [this.id];
-  pts[0].positions = gripper_open ? Math.PI : 0;
+  pts[0].positions = gripper_open ? [0] : [Math.PI];  // 0 closes gripper, 180 opens gripper
   msg.points = pts;
   joint_publisher.publish(msg);
   joints.gripper.innerHTML = gripper_open ? "Open" : "Close";

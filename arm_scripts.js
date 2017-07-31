@@ -15,6 +15,7 @@ var mobile;                 // boolean indicating whether user is on mobile or n
 
 var joints;                 // dictionary of pointers to html sliders and names of joints
 var joint_publisher;        // publishes joint trajectories
+var gripper_open;           // boolean for the state of the gripper
 var pts, msg;               // rosbridge messages, pts - JointTrajectoryPoints[], msg - JointTrajectory
 var full;                   // boolean for current mode, send full configuration or not
 
@@ -25,30 +26,31 @@ function init() {
   connectivity = document.getElementById("connectivity");
   mobile = navigator.userAgent.match(/(iPhone|Android|IEMobile)/); // check to see if the user is on a mobile device
 
-  joints = {names : ["shoulder", "elbow_pitch", "elbow_roll", "wrist_pitch", "wrist_roll", "gripper_roll", "gripper"],
-            joints : [document.getElementById("shoulder"),
-                      document.getElementById("elbow_pitch"),
-                      document.getElementById("elbow_roll"),
-                      document.getElementById("wrist_pitch"),
-                      document.getElementById("wrist_roll"),
-                      document.getElementById("gripper_roll"),
-                      document.getElementById("gripper")]
+  joints = {shoulder : document.getElementById("shoulder"),
+            elbow_pitch : document.getElementById("elbow_pitch"),
+            elbow_roll : document.getElementById("elbow_roll"),
+            wrist_pitch : document.getElementById("wrist_pitch"),
+            wrist_roll : document.getElementById("wrist_roll"),
+            gripper_roll : document.getElementById("gripper_roll"),
+            gripper : document.getElementById("gripper")
   };
 
   pts = [new ROSLIB.Message({             // allocate memory for pts and msg
-    positions : [0, 0, 0, 0, 0, 0, 0]
+    positions : []
   })];
   msg = new ROSLIB.Message({
-    joint_names : joints.names,
+    joint_names : [],
     points : pts
   });
 
-  full = false;
-
-  for(i = 0; i < joints.joints.length; i++) {
-    joints.joints[i].addEventListener("change", sendJoint);  // add event listeners to each slider
+  for(key in joints.joints) {
+    joints.joints[key].addEventListener("change", sendJoint);  // add event listeners to each slider
   }
 
+  full = false;
+  gripper_open = true;
+  joints.gripper.addEventListener("click", gripper_change);
+  
   document.getElementById("full").addEventListener("change", function() {  // change mode when the checkbox gets changed
     full = !full;
   });
@@ -108,14 +110,25 @@ function sendJoint() {
 
 // called when the send button is clicked
 function sendConfig() {
-  for(i = 0; i < joints.joints.length; i++) {
-    pts[0].positions[i] = joints.joints[i].value * Math.PI/180;  // get values from all sliders
+  var i = 0;
+  for(key in joints.joints) {
+    pts[0].positions[i] = joints.joints[key].value * Math.PI/180;  // get values from all sliders and convert to radians
+    msg.joint_names[i] = key;
+    i++;
   }
-
-  msg.joint_names = joints.names;
   msg.points = pts;
 
   joint_publisher.publish(msg);
+}
+
+// called to open or close the gripper
+function gripper_change() {
+  msg.joint_names = [this.id];
+  pts[0].positions = gripper_open ? Math.PI : 0;
+  msg.points = pts;
+  joint_publisher.publish(msg);
+  joints.gripper.innerHTML = gripper_open ? "Open" : "Close";
+  gripper_open = !gripper_open;
 }
 
 // called on stop button clicked, closes rosbridge connection

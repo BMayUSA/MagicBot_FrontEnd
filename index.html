@@ -2,12 +2,41 @@
 <html>
 <head>
 <meta charset="utf-8" />
+<style>
+.button {
+  background-color: #fbe82b;
+  border: none;
+  color: #000000;
+  padding: 15px 32px;
+  text-align: center;
+  text-decoration: none;
+  display: block;
+  font-size: 16px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  margin-left: auto;
+  margin-right: auto;
+  cursor: pointer;
+}
+</style>
 </head>
 
-<body>
-  <h1>ZombieBot</h1>
-  <a href="base_control.html">Base Control</a>
-  <br>
-  <a href="arm_control.html">Arm Control</a>
+<body bgcolor="#011c38">
+  <div>
+    <a href="http://progress.eecs.umich.edu">
+      <img src="assets/4progress_logo.png"
+      style="display: block; margin-left: auto; margin-right: auto">
+    </a>
+	  <h1 style="text-align: center; color: #ffffff">MagicBot</h1>
+    <button class="button" onclick="location.href = 'base_control.html'">Base Control</button>
+    <br>
+    <button class="button" onclick="location.href = 'arm_control.html'">Arm Control</button>
+
+    <!--
+	  <a href="base_control.html">Base Control</a>
+	  <br>
+	  <a href="arm_control.html">Arm Control</a>
+    -->
+	</div>
 </body>
 </html>

@@ -307,7 +307,7 @@ function movement(event) {
 function stickDownT(event) {
   event.preventDefault();
   rect = controls.getBoundingClientRect();                                                         // retrieves the current rect defining the controls canvas
-  mouseDown = {x : event.touhes[0].clientX - rect.left, y : event.touches[0].clientY - rect.top};  // sets mouseDown to (x, y) of the click relative to top left of controls canvas
+  mouseDown = {x : event.touches[0].clientX - rect.left, y : event.touches[0].clientY - rect.top};  // sets mouseDown to (x, y) of the click relative to top left of controls canvas
   drawStick();                                                                                     // draws the bounding circle without a joystick circle
 }
 
